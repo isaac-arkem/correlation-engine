@@ -9,6 +9,30 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      notifications: {
+        Row: {
+          id: string;
+          user_id: string;
+          type: 'critical' | 'warning' | 'info' | 'success';
+          title: string;
+          message: string;
+          link: string | null;
+          read: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          type?: 'critical' | 'warning' | 'info' | 'success';
+          title: string;
+          message: string;
+          link?: string | null;
+          read?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['notifications']['Insert']>;
+        Relationships: [];
+      };
       es_connections: {
         Row: {
           id: string;

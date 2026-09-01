@@ -17,6 +17,7 @@ import { RecommendedActions } from "@/features/dashboard/components/recommended-
 import { RiskGauge } from "@/features/dashboard/components/risk-gauge";
 import { StatusSelector } from "@/features/dashboard/components/status-selector";
 import { ExportPdfButton } from "@/features/dashboard/components/export-pdf-button";
+import { AiAssistant } from "@/features/dashboard/components/ai-assistant";
 import { formatDate, formatNumber } from "@/lib/utils/format";
 import { getSessionUser } from "@/features/auth/lib/session";
 
@@ -127,6 +128,8 @@ export default async function IncidentDetailPage({
           </Card>
         </section>
       </main>
+
+      <AiAssistant incident={incident} />
     </>
   );
 }

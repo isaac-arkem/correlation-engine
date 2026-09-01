@@ -33,6 +33,7 @@ export function RunSelector({
     (runId: string) => {
       const next = new URLSearchParams(params.toString());
       next.set("run", runId);
+      next.delete("live");
       const query = next.toString();
       router.replace(query ? `?${query}` : "/", { scroll: false });
     },

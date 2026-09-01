@@ -4,6 +4,7 @@ import { BrandMark } from "@/components/brand/mark";
 import { Sidebar } from "@/components/layout/sidebar";
 import { siteConfig } from "@/config/site";
 import { SignOutButton } from "@/features/auth/components/sign-out-button";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { getSessionUser } from "@/features/auth/lib/session";
 
 type AppShellProps = {
@@ -25,7 +26,10 @@ export function AppShell({ children }: AppShellProps) {
             {siteConfig.name}
           </p>
         </div>
-        <SignOutButton />
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <SignOutButton />
+        </div>
       </header>
       <div className="flex min-h-0 flex-1">
         <Suspense>

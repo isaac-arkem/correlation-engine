@@ -7,11 +7,13 @@ import { useState } from "react";
 import { BrandMark } from "@/components/brand/mark";
 import { siteConfig } from "@/config/site";
 import { signOut } from "@/features/auth/actions";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { cn } from "@/lib/utils/cn";
 
 const NAV = [
   { href: "/", label: "Insights" },
   { href: "/correlate", label: "Correlate" },
+  { href: "/evaluation", label: "Evaluation" },
   { href: "/methodology", label: "Methodology" },
   { href: "/help", label: "Help" },
 ];
@@ -42,6 +44,15 @@ function HelpIcon() {
       <circle cx="12" cy="12" r="9" />
       <path d="M9.5 9.5a2.5 2.5 0 0 1 4.95.5c0 1.5-2.45 2-2.45 3.5" />
       <circle cx="12" cy="17" r=".5" fill="currentColor" />
+    </svg>
+  );
+}
+
+function EvaluationIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M9 11l3 3L22 4" />
+      <path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11" />
     </svg>
   );
 }
@@ -117,7 +128,7 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
               )}
             >
               <span className="flex w-7 justify-center">
-                {item.href === "/help" ? <HelpIcon /> : item.href === "/methodology" ? <MethodologyIcon /> : item.href === "/correlate" ? <CorrelateIcon /> : <InsightsIcon />}
+                {item.href === "/help" ? <HelpIcon /> : item.href === "/methodology" ? <MethodologyIcon /> : item.href === "/correlate" ? <CorrelateIcon /> : item.href === "/evaluation" ? <EvaluationIcon /> : <InsightsIcon />}
               </span>
               {open ? <span className="text-[12px]">{item.label}</span> : null}
             </Link>
@@ -125,9 +136,15 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
         })}
       </nav>
 
+      <div className={cn("mt-auto flex flex-col gap-0.5 border-t border-line pt-1", !open && "items-center")}>
+        <div className={cn("flex items-center px-1", !open && "justify-center px-0")}>
+          <NotificationBell />
+        </div>
+      </div>
+
       <div
         className={cn(
-          "mt-auto flex h-11 items-center gap-2 border-t border-line px-1",
+          "flex h-11 items-center gap-2 border-t border-line px-1",
           !open && "justify-center px-0",
         )}
       >

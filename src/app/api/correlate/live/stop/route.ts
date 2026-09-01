@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createSupabaseServerClient } from '@/lib/supabase/server';
-import { completeRun } from '@/lib/correlation/persist';
+import { createSupabaseAdminClient } from '@/lib/supabase/server';
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -20,7 +20,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'runId is required' }, { status: 400 });
   }
 
-  await completeRun(body.runId, [], 0);
+  // Just mark as completed — don't overwrite the counts that poll cycles already wrote
+  const sb = createSupabaseAdminClient();
+  await sb.from('correlation_runs').update({
+    status: 'completed',
+    completed_at: new Date().toISOString(),
+  }).eq('id', body.runId);
 
   return NextResponse.json({ ok: true });
 }

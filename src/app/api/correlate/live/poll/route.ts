@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { createSupabaseServerClient } from '@/lib/supabase/server';
+import { createSupabaseAdminClient, createSupabaseServerClient } from '@/lib/supabase/server';
 import { Client } from '@elastic/elasticsearch';
 import { classifyAll } from '@/lib/correlation/classify';
 import { correlate } from '@/lib/correlation/correlate';
@@ -7,6 +7,7 @@ import { persistEvents, persistIncidents } from '@/lib/correlation/persist';
 import { autoDetectConfig } from '@/lib/correlation/auto-detect';
 import { setCorrelationConfig, resetConfigCache } from '@/lib/correlation/config';
 import type { NormalizedEvent } from '@/lib/correlation/types';
+import { notifyLivePollEvent } from '@/lib/notifications/create';
 
 function mapSuricataHit(s: Record<string, unknown>): NormalizedEvent {
   const alert = s.alert as Record<string, unknown> | undefined;
@@ -42,6 +43,8 @@ function mapWinlogHit(s: Record<string, unknown>): NormalizedEvent {
     raw: s,
   };
 }
+
+export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const supabase = await createSupabaseServerClient();
@@ -104,9 +107,16 @@ export async function POST(request: Request) {
 
   // Determine the "since" timestamp — use last_poll_at or 5 min ago
   const since = run.last_poll_at ?? new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const admin = createSupabaseAdminClient();
+  const pollInterval = conn.poll_interval ?? 30;
 
+  let client: Client | undefined;
   try {
-    const client = new Client(clientOpts as ConstructorParameters<typeof Client>[0]);
+    client = new Client({
+      ...(clientOpts as ConstructorParameters<typeof Client>[0]),
+      requestTimeout: 20_000,
+      maxRetries: 1,
+    });
     const rangeFilter = { range: { '@timestamp': { gt: since } } };
 
     // Query Suricata
@@ -175,23 +185,35 @@ export async function POST(request: Request) {
 
     const lastTimestamp = newEvents.length > 0
       ? newEvents[newEvents.length - 1].eventTime
-      : since;
+      : new Date().toISOString();
 
-    // Update poll state in DB
+    // RLS on correlation_runs is SELECT-only for authenticated users —
+    // writes must go through the service-role client or poll_count never sticks.
     const newPollCount = (run.poll_count ?? 0) + 1;
-    await supabase.from('correlation_runs').update({
+    const { error: pollErr } = await admin.from('correlation_runs').update({
       poll_count: newPollCount,
       last_poll_at: lastTimestamp,
     }).eq('id', runId);
 
+    if (pollErr) {
+      console.error('[live/poll] failed to persist poll_count:', pollErr.message);
+    }
+
     if (newEvents.length === 0) {
+      const { data: totals } = await admin
+        .from('correlation_runs')
+        .select('event_count, incident_count')
+        .eq('id', runId)
+        .single();
+
       return NextResponse.json({
         newEvents: 0,
-        totalEvents: 0,
-        incidentCount: 0,
+        totalEvents: totals?.event_count ?? 0,
+        incidentCount: totals?.incident_count ?? 0,
         lastTimestamp,
         pollCount: newPollCount,
         maxPolls: conn.max_polls,
+        pollInterval,
       });
     }
 
@@ -208,30 +230,41 @@ export async function POST(request: Request) {
     const eventIdMap = await persistEvents(classified, runId);
     await persistIncidents(incidents, eventIdMap, runId);
 
-    // Get updated totals
-    const { createClient } = await import('@supabase/supabase-js');
-    const sb = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    );
-
-    const { count: eventCount } = await sb
+    const { count: eventCount } = await admin
       .from('events')
       .select('id', { count: 'exact', head: true })
       .eq('run_id', runId);
 
-    const { count: incidentCount } = await sb
+    const { count: incidentCount } = await admin
       .from('incidents')
       .select('id', { count: 'exact', head: true })
       .eq('run_id', runId);
 
-    await sb.from('correlation_runs').update({
+    // Build source/phase counts from all events in this run
+    const { data: allEvts } = await admin
+      .from('events')
+      .select('source, kill_chain_phase')
+      .eq('run_id', runId)
+      .limit(10000);
+
+    const sourceCounts: Record<string, number> = {};
+    const phaseCounts: Record<string, number> = {};
+    for (const ev of allEvts ?? []) {
+      if (ev.source) sourceCounts[ev.source] = (sourceCounts[ev.source] ?? 0) + 1;
+      if (ev.kill_chain_phase) phaseCounts[ev.kill_chain_phase] = (phaseCounts[ev.kill_chain_phase] ?? 0) + 1;
+    }
+
+    await admin.from('correlation_runs').update({
       event_count: eventCount ?? 0,
       incident_count: incidentCount ?? 0,
+      source_counts: sourceCounts,
+      phase_counts: phaseCounts,
       attacker_ips: detectedConfig.attackerIps,
       victim_ips: detectedConfig.victimIps,
       c2_ports: [...detectedConfig.c2Ports],
     }).eq('id', runId);
+
+    await notifyLivePollEvent(user.id, conn.label, newEvents.length, eventCount ?? 0, runId);
 
     return NextResponse.json({
       newEvents: newEvents.length,
@@ -241,9 +274,12 @@ export async function POST(request: Request) {
       lastTimestamp,
       pollCount: newPollCount,
       maxPolls: conn.max_polls,
+      pollInterval,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Poll failed';
     return NextResponse.json({ error: msg }, { status: 500 });
+  } finally {
+    await client?.close().catch(() => undefined);
   }
 }

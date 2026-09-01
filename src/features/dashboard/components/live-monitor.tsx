@@ -11,6 +11,7 @@ interface PollResult {
   incidentCount: number;
   pollCount: number;
   maxPolls: number;
+  pollInterval?: number;
 }
 
 export function LiveMonitor() {
@@ -21,43 +22,69 @@ export function LiveMonitor() {
 
   const [result, setResult] = useState<PollResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [active, setActive] = useState(false);
-  const [done, setDone] = useState(false);
-  const activeRef = useRef(false);
-  const busyRef = useRef(false);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const runIdRef = useRef(runId);
-  runIdRef.current = runId;
+  const [active, setActive] = useState(isLive && !!runId);
+  const stoppedRef = useRef(false);
+  const paramsRef = useRef(params);
+  paramsRef.current = params;
 
-  // Start on mount
+  function clearLiveFlag() {
+    const next = new URLSearchParams(paramsRef.current.toString());
+    if (!next.has("live")) return;
+    next.delete("live");
+    const query = next.toString();
+    router.replace(query ? `?${query}` : "/", { scroll: false });
+  }
+
   useEffect(() => {
-    if (isLive && runId) {
-      activeRef.current = true;
-      setActive(true);
+    if (!isLive || !runId) {
+      setError(null);
+      setActive(false);
+      return;
     }
-  }, [isLive, runId]);
 
-  // Poll loop
-  useEffect(() => {
-    if (!active || !runId) return;
+    stoppedRef.current = false;
+    setActive(true);
+    setError(null);
 
-    async function poll() {
-      if (!activeRef.current || busyRef.current) return;
-      busyRef.current = true;
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const abort = new AbortController();
+
+    async function markDone() {
+      if (runId) {
+        await fetch("/api/correlate/live/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ runId }),
+        }).catch(() => undefined);
+      }
+      if (stoppedRef.current) return;
+      setActive(false);
+      setError(null);
+      clearLiveFlag();
+    }
+
+    async function tick() {
+      if (stoppedRef.current || !runId) return;
 
       try {
         const res = await fetch("/api/correlate/live/poll", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ runId: runIdRef.current }),
+          body: JSON.stringify({ runId }),
+          signal: abort.signal,
         });
 
-        if (!activeRef.current) return;
+        if (stoppedRef.current) return;
 
         const data = await res.json();
         if (!res.ok) {
+          // Finished runs are expected after the last cycle — not an error.
+          if (data.error === "Run already completed") {
+            await markDone();
+            return;
+          }
           setError(data.error ?? "Poll failed");
-          stop();
+          setActive(false);
           return;
         }
 
@@ -66,64 +93,32 @@ export function LiveMonitor() {
         setError(null);
 
         if (r.pollCount >= r.maxPolls) {
-          await fetch("/api/correlate/live/stop", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ runId: runIdRef.current }),
-          });
-          stop();
-          setDone(true);
+          await markDone();
+          return;
         }
+
+        const waitMs = Math.max(10, r.pollInterval ?? 30) * 1000;
+        timeoutId = setTimeout(tick, waitMs);
       } catch (err) {
-        if (!activeRef.current) return;
+        if (stoppedRef.current || abort.signal.aborted) return;
         setError(err instanceof Error ? err.message : "Network error");
-        stop();
-      } finally {
-        busyRef.current = false;
+        setActive(false);
       }
     }
 
-    function stop() {
-      activeRef.current = false;
-      setActive(false);
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-    }
-
-    // First poll right away
-    poll();
-
-    // Then every 30s
-    intervalRef.current = setInterval(poll, 30_000);
+    tick();
 
     return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
+      stoppedRef.current = true;
+      abort.abort();
+      if (timeoutId) clearTimeout(timeoutId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  // Refresh dashboard only once when polling finishes
-  useEffect(() => {
-    if (done) {
-      const next = new URLSearchParams(params.toString());
-      next.delete("live");
-      router.replace(`?${next.toString()}`, { scroll: false });
-      router.refresh();
-    }
-  }, [done, params, router]);
+  }, [isLive, runId, router]);
 
   async function handleStop() {
-    activeRef.current = false;
+    stoppedRef.current = true;
     setActive(false);
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
+    setError(null);
 
     if (runId) {
       await fetch("/api/correlate/live/stop", {
@@ -133,9 +128,7 @@ export function LiveMonitor() {
       });
     }
 
-    const next = new URLSearchParams(params.toString());
-    next.delete("live");
-    router.replace(`?${next.toString()}`, { scroll: false });
+    clearLiveFlag();
     router.refresh();
   }
 

@@ -19,6 +19,7 @@ import { autoDetectConfig } from '@/lib/correlation/auto-detect';
 import { setCorrelationConfig, resetConfigCache } from '@/lib/correlation/config';
 import type { NormalizedEvent } from '@/lib/correlation/types';
 import type { LogType } from '@/lib/correlation/detect';
+import { notifyNewIncidents, notifyRunCompleted } from '@/lib/notifications/create';
 
 export const maxDuration = 60;
 
@@ -204,6 +205,14 @@ export async function POST(request: Request) {
 
         await persistIncidents(incidents, eventIdMap, runId);
         await completeRun(runId, classifiedEvents, incidents.length);
+
+        await notifyRunCompleted(user.id, label.trim(), classifiedEvents.length, incidents.length, runId);
+        await notifyNewIncidents(
+          user.id,
+          label.trim(),
+          incidents.map((i) => ({ severity: i.severity, attackerIp: i.attackerIp, victimIp: i.victimIp })),
+          runId,
+        );
 
         send({
           step: 'done',

@@ -15,6 +15,7 @@ import { LiveMonitor } from "@/features/dashboard/components/live-monitor";
 import { OverviewCards } from "@/features/dashboard/components/overview-cards";
 import { RunSelector } from "@/features/dashboard/components/run-selector";
 import { resolveRange, toQueryString } from "@/features/dashboard/lib/window";
+import { AiAssistant } from "@/features/dashboard/components/ai-assistant";
 import { formatNumber } from "@/lib/utils/format";
 
 export default async function DashboardPage({
@@ -100,6 +101,10 @@ export default async function DashboardPage({
           </Card>
         </div>
       </main>
+
+      <Suspense>
+        <AiSection runId={activeRunId} from={range.from} to={range.to} />
+      </Suspense>
     </>
   );
 }
@@ -140,4 +145,21 @@ async function IncidentPanel({
       </CardBody>
     </>
   );
+}
+
+async function AiSection({
+  runId,
+  from,
+  to,
+}: {
+  runId: string;
+  from?: string;
+  to?: string;
+}) {
+  const [stats, incidents] = await Promise.all([
+    getOverviewStats(runId, from, to),
+    getIncidents(runId, from, to),
+  ]);
+
+  return <AiAssistant stats={stats} incidents={incidents} />;
 }
