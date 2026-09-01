@@ -3,13 +3,19 @@
 import type { ReactNode } from "react";
 
 import { Caption } from "@/components/ui/caption";
+import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { cn } from "@/lib/utils/cn";
 
 export function TopBar({ children }: { children: ReactNode }) {
   return (
-    <header className="shrink-0 bg-base/95 backdrop-blur">
-      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-3 px-4 py-2.5 lg:px-6">
-        {children}
+    <header className="relative z-40 shrink-0 bg-base/95 backdrop-blur">
+      <div className="flex items-end gap-3 px-4 py-2.5 lg:px-6">
+        <div className="flex min-w-0 flex-1 flex-wrap items-end justify-between gap-x-6 gap-y-3">
+          {children}
+        </div>
+        <div className="hidden shrink-0 lg:block">
+          <NotificationBell />
+        </div>
       </div>
     </header>
   );

@@ -2,6 +2,12 @@
 
 import { createSupabaseServerClient } from '@/lib/supabase/server';
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import {
+  canSendAlertEmail,
+  isValidEmail,
+  resolveAlertRecipient,
+  sendAlertEmail,
+} from '@/lib/notifications/email';
 
 export interface Notification {
   id: string;
@@ -51,6 +57,79 @@ export async function markAsRead(notificationId: string): Promise<void> {
 
   const sb = createSupabaseAdminClient();
   await sb.from('notifications').update({ read: true }).eq('id', notificationId).eq('user_id', user.id);
+}
+
+export async function getAlertSettings(): Promise<{
+  email: string;
+  emailEnabled: boolean;
+}> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const saved = (user?.user_metadata?.alert_email as string | undefined)?.trim() ?? "";
+  const fallback = process.env.ALERT_EMAIL?.trim() ?? "";
+  const loginEmail = user?.email?.trim() ?? "";
+
+  return {
+    email: resolveAlertRecipient(saved, fallback, loginEmail),
+    emailEnabled: canSendAlertEmail(),
+  };
+}
+
+export async function saveAlertEmail(
+  email: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const trimmed = email.trim();
+  if (trimmed && !isValidEmail(trimmed)) {
+    return { ok: false, error: "Enter a valid email address." };
+  }
+
+  const supabase = await createSupabaseServerClient();
+  const { error } = await supabase.auth.updateUser({
+    data: { alert_email: trimmed },
+  });
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function forwardNotification(
+  notificationId: string,
+  toOverride?: string,
+  origin?: string,
+): Promise<{ ok: boolean; sentTo?: string; error?: string }> {
+  const supabase = await createSupabaseServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const settings = await getAlertSettings();
+  const to = resolveAlertRecipient(toOverride, settings.email);
+  if (!to) {
+    return { ok: false, error: "Set an engineer email first." };
+  }
+
+  const sb = createSupabaseAdminClient();
+  const { data: row } = await sb
+    .from("notifications")
+    .select("id, type, title, message, link")
+    .eq("id", notificationId)
+    .eq("user_id", user.id)
+    .single();
+
+  if (!row) return { ok: false, error: "Notification not found." };
+
+  return sendAlertEmail({
+    to,
+    type: row.type,
+    title: row.title,
+    message: row.message,
+    link: row.link,
+    origin,
+  });
 }
 
 export async function markAllAsRead(): Promise<void> {

@@ -3,6 +3,7 @@ import { Suspense } from "react";
 import { ContextTile, TopBar } from "@/components/ui/top-bar";
 import { getCorrelationRuns, getLatestRunId } from "@/features/dashboard/actions";
 import { RunSelector } from "@/features/dashboard/components/run-selector";
+import { AiAssistant } from "@/features/dashboard/components/ai-assistant";
 import { getEvaluationData } from "@/features/evaluation/actions";
 import { MetricsPanel } from "@/features/evaluation/components/metrics-panel";
 
@@ -53,6 +54,8 @@ export default async function EvaluationPage({
           <p className="text-[12px] text-muted">Run not found.</p>
         )}
       </main>
+
+      {data && <AiAssistant evaluation={data} />}
     </>
   );
 }

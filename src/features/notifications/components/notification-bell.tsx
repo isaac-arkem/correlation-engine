@@ -5,9 +5,12 @@ import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils/cn";
 import {
+  forwardNotification,
+  getAlertSettings,
   getNotifications,
   markAllAsRead,
   markAsRead,
+  saveAlertEmail,
   type Notification,
 } from "../actions";
 
@@ -34,13 +37,22 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
+  const [alertEmail, setAlertEmail] = useState("");
+  const [emailEnabled, setEmailEnabled] = useState(false);
+  const [emailStatus, setEmailStatus] = useState<string | null>(null);
+  const [forwardingId, setForwardingId] = useState<string | null>(null);
   const [, startTransition] = useTransition();
   const panelRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
-    const data = await getNotifications();
+    const [data, settings] = await Promise.all([
+      getNotifications(),
+      getAlertSettings(),
+    ]);
     setNotifications(data.notifications);
     setUnread(data.unreadCount);
+    setAlertEmail(settings.email);
+    setEmailEnabled(settings.emailEnabled);
   }, []);
 
   useEffect(() => {
@@ -75,6 +87,33 @@ export function NotificationBell() {
     }
   }
 
+  function handleSaveEmail(e: React.FormEvent) {
+    e.preventDefault();
+    startTransition(async () => {
+      const result = await saveAlertEmail(alertEmail);
+      setEmailStatus(result.ok ? "Saved" : (result.error ?? "Could not save"));
+    });
+  }
+
+  function handleForward(e: React.MouseEvent, id: string) {
+    e.stopPropagation();
+    setForwardingId(id);
+    startTransition(async () => {
+      const result = await forwardNotification(
+        id,
+        alertEmail,
+        window.location.origin,
+      );
+      if (result.ok) {
+        if (result.sentTo) setAlertEmail(result.sentTo);
+        setEmailStatus(`Sent to ${result.sentTo ?? alertEmail}`);
+      } else {
+        setEmailStatus(result.error ?? "Forward failed");
+      }
+      setForwardingId(null);
+    });
+  }
+
   function handleMarkAll() {
     startTransition(async () => {
       await markAllAsRead();
@@ -103,7 +142,7 @@ export function NotificationBell() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full z-50 mt-1 w-80 overflow-hidden rounded-lg border border-line bg-base shadow-2xl">
+        <div className="absolute right-0 top-full z-[80] mt-1.5 w-[22rem] overflow-hidden rounded-lg border border-line bg-base shadow-2xl">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="text-[12px] font-semibold text-highlight">Notifications</span>
             {unread > 0 && (
@@ -116,6 +155,18 @@ export function NotificationBell() {
               </button>
             )}
           </div>
+          {emailStatus ? (
+            <p
+              className={cn(
+                "border-b border-line px-3 py-1.5 text-[10px] leading-[14px]",
+                emailStatus.startsWith("Sent") || emailStatus === "Saved"
+                  ? "text-green-400"
+                  : "text-red-400",
+              )}
+            >
+              {emailStatus}
+            </p>
+          ) : null}
 
           <div className="max-h-80 overflow-y-auto overscroll-contain">
             {notifications.length === 0 ? (
@@ -126,18 +177,20 @@ export function NotificationBell() {
               notifications.map((n) => {
                 const style = TYPE_STYLE[n.type] ?? TYPE_STYLE.info;
                 return (
-                  <button
+                  <div
                     key={n.id}
-                    type="button"
-                    onClick={() => handleNotificationClick(n)}
                     className={cn(
-                      "flex w-full gap-2.5 border-b border-line/50 px-3 py-2.5 text-left transition-colors hover:bg-hover",
+                      "flex w-full gap-2.5 border-b border-line/50 px-3 py-2.5 text-left",
                       !n.read && "bg-field/50",
                     )}
                   >
                     <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", style.dot)} />
                     <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                      <div className="flex items-baseline justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleNotificationClick(n)}
+                        className="flex items-baseline justify-between gap-2 text-left hover:text-highlight"
+                      >
                         <span className={cn(
                           "truncate text-[11px] text-ink",
                           !n.read && "font-semibold",
@@ -147,16 +200,56 @@ export function NotificationBell() {
                         <span className="shrink-0 text-[9px] text-subtle">
                           {timeAgo(n.createdAt)}
                         </span>
-                      </div>
+                      </button>
                       <p className="text-[10px] leading-relaxed text-muted line-clamp-2">
                         {n.message}
                       </p>
+                      <button
+                        type="button"
+                        onClick={(e) => handleForward(e, n.id)}
+                        disabled={forwardingId === n.id}
+                        className="mt-1 w-fit text-[10px] text-accent hover:underline disabled:opacity-50"
+                      >
+                        {forwardingId === n.id ? "Sending…" : "Forward to engineer"}
+                      </button>
                     </div>
-                  </button>
+                  </div>
                 );
               })
             )}
           </div>
+
+          <form
+            onSubmit={handleSaveEmail}
+            className="border-t border-line px-3 py-2.5"
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-subtle">
+              Forward to engineer
+            </p>
+            <div className="mt-1.5 flex items-center gap-1.5">
+              <input
+                type="email"
+                value={alertEmail}
+                onChange={(e) => {
+                  setAlertEmail(e.target.value);
+                  setEmailStatus(null);
+                }}
+                placeholder="security@company.com"
+                className="h-7 min-w-0 flex-1 rounded-md border border-line bg-field px-2 font-mono text-[11px] text-ink outline-none placeholder:text-subtle focus:border-line-strong"
+              />
+              <button
+                type="submit"
+                className="h-7 shrink-0 rounded-md border border-line bg-field px-2 text-[10px] font-semibold text-ink hover:border-line-strong"
+              >
+                Save
+              </button>
+            </div>
+            <p className="mt-1.5 text-[10px] leading-[14px] text-subtle">
+              {emailEnabled
+                ? "Until a domain is verified, Resend delivers only to the email on your Resend account."
+                : "Add RESEND_API_KEY in .env.local and restart the app to send mail."}
+            </p>
+          </form>
         </div>
       )}
     </div>

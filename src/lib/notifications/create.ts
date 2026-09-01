@@ -1,4 +1,5 @@
 import { createSupabaseAdminClient } from '@/lib/supabase/server';
+import { resolveAlertRecipient, sendAlertEmail } from '@/lib/notifications/email';
 
 type NotificationType = 'critical' | 'warning' | 'info' | 'success';
 
@@ -17,6 +18,36 @@ export async function createNotification(
 
   if (error) {
     console.error('[notifications] Failed to create:', error.message);
+    return;
+  }
+
+  if (opts.type === 'critical' || opts.type === 'warning') {
+    void forwardToEngineer(userId, opts);
+  }
+}
+
+async function forwardToEngineer(
+  userId: string,
+  opts: { type: NotificationType; title: string; message: string; link?: string },
+) {
+  try {
+    const sb = createSupabaseAdminClient();
+    const { data } = await sb.auth.admin.getUserById(userId);
+    const saved = (data.user?.user_metadata?.alert_email as string | undefined)?.trim();
+    const fallback = process.env.ALERT_EMAIL?.trim();
+    const loginEmail = data.user?.email?.trim();
+    const to = resolveAlertRecipient(saved, fallback, loginEmail);
+    if (!to) return;
+
+    await sendAlertEmail({
+      to,
+      type: opts.type,
+      title: opts.title,
+      message: opts.message,
+      link: opts.link,
+    });
+  } catch (err) {
+    console.error('[notifications] forward failed:', err);
   }
 }
 
@@ -31,11 +62,21 @@ export async function notifyNewIncidents(
   const critical = incidents.filter((i) => i.severity === 'critical' || i.severity === 'high');
 
   if (critical.length > 0) {
+    const sb = createSupabaseAdminClient();
+    const { data: top } = await sb
+      .from('incidents')
+      .select('id')
+      .eq('run_id', runId)
+      .in('severity', ['critical', 'high'])
+      .order('risk_score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     await createNotification(userId, {
       type: 'critical',
       title: `${critical.length} critical/high incident${critical.length !== 1 ? 's' : ''} detected`,
       message: `Run "${runLabel}" found ${critical.length} high-severity incident${critical.length !== 1 ? 's' : ''}. ${critical[0].attackerIp} → ${critical[0].victimIp}${critical.length > 1 ? ` and ${critical.length - 1} more` : ''}.`,
-      link: `/?run=${runId}`,
+      link: top?.id ? `/incidents/${top.id}?run=${runId}` : `/?run=${runId}`,
     });
   }
 

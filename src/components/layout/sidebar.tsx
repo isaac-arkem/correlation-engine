@@ -7,7 +7,6 @@ import { useState } from "react";
 import { BrandMark } from "@/components/brand/mark";
 import { siteConfig } from "@/config/site";
 import { signOut } from "@/features/auth/actions";
-import { NotificationBell } from "@/features/notifications/components/notification-bell";
 import { cn } from "@/lib/utils/cn";
 
 const NAV = [
@@ -136,15 +135,9 @@ export function Sidebar({ userEmail }: { userEmail?: string }) {
         })}
       </nav>
 
-      <div className={cn("mt-auto flex flex-col gap-0.5 border-t border-line pt-1", !open && "items-center")}>
-        <div className={cn("flex items-center px-1", !open && "justify-center px-0")}>
-          <NotificationBell />
-        </div>
-      </div>
-
       <div
         className={cn(
-          "flex h-11 items-center gap-2 border-t border-line px-1",
+          "mt-auto flex h-11 items-center gap-2 border-t border-line px-1",
           !open && "justify-center px-0",
         )}
       >

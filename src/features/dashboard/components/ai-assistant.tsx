@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 import { cn } from "@/lib/utils/cn";
 import type { OverviewStats, IncidentSummary, IncidentDetail } from "../actions";
+import type { EvaluationData } from "@/features/evaluation/actions";
 
 interface Message {
   role: "user" | "assistant";
@@ -77,14 +78,63 @@ const INCIDENT_SUGGESTIONS = [
   "What should I do about this?",
 ];
 
+const EVALUATION_SUGGESTIONS = [
+  "Explain these evaluation metrics",
+  "Is the engine performing well?",
+  "What do precision and recall mean here?",
+  "How can I improve the detection rate?",
+];
+
+function buildEvaluationContext(data: EvaluationData): string {
+  const lines: string[] = [];
+  lines.push(`Viewing the Evaluation Metrics page for dataset: "${data.runLabel}"`);
+  lines.push(`Total events processed: ${data.totalEvents}`);
+  lines.push(`Classified events: ${data.classifiedEvents}`);
+  lines.push(`Total incidents detected: ${data.totalIncidents}`);
+  lines.push(`Event-to-incident reduction ratio: ${data.reduction}:1`);
+
+  lines.push(`\nDetection results:`);
+  lines.push(`- True Positives (correctly detected attacks): ${data.truePositives}`);
+  lines.push(`- False Positives (wrong detections): ${data.falsePositives}`);
+  lines.push(`- False Negatives (missed attacks): ${data.falseNegatives}`);
+  lines.push(`- Unreviewed incidents: ${data.unreviewed}`);
+  lines.push(`- Reconstructed attack campaigns: ${data.reconstructed}`);
+  lines.push(`- Suppressed (single-phase, not enough for incident): ${data.suppressed}`);
+
+  const tp = data.truePositives;
+  const fp = data.falsePositives;
+  const fn = data.falseNegatives;
+  const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+  const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+  const f1 = precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+  lines.push(`\nComputed metrics:`);
+  lines.push(`- Precision: ${(precision * 100).toFixed(1)}%`);
+  lines.push(`- Recall: ${(recall * 100).toFixed(1)}%`);
+  lines.push(`- F1 Score: ${(f1 * 100).toFixed(1)}%`);
+
+  if (data.campaigns.length > 0) {
+    lines.push(`\nKnown attack campaigns:`);
+    for (const c of data.campaigns) {
+      lines.push(
+        `- ${c.attackerIp} → ${c.victimIp}: ${c.found ? "DETECTED" : "MISSED"} | ` +
+        `${c.phaseCount} phases, ${c.eventCount} events${c.severity ? `, ${c.severity} severity` : ""}`
+      );
+    }
+  }
+
+  return lines.join("\n");
+}
+
 export function AiAssistant({
   stats,
   incidents,
   incident,
+  evaluation,
 }: {
   stats?: OverviewStats;
   incidents?: IncidentSummary[];
   incident?: IncidentDetail;
+  evaluation?: EvaluationData;
 }) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -106,9 +156,11 @@ export function AiAssistant({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           question: question.trim(),
-          context: incident
-            ? buildIncidentContext(incident)
-            : buildContext(stats!, incidents!),
+          context: evaluation
+            ? buildEvaluationContext(evaluation)
+            : incident
+              ? buildIncidentContext(incident)
+              : buildContext(stats!, incidents!),
         }),
       });
 
@@ -175,12 +227,14 @@ export function AiAssistant({
         {messages.length === 0 && (
           <div className="flex flex-col gap-2">
             <p className="text-[11px] text-muted">
-              {incident
-                ? "Ask me about this incident — what happened, how serious it is, or what to do next."
-                : "Ask me anything about your dashboard data — incidents, events, attack phases, or severity levels."}
+              {evaluation
+                ? "Ask me about the evaluation metrics — precision, recall, F1, or how the engine performed."
+                : incident
+                  ? "Ask me about this incident — what happened, how serious it is, or what to do next."
+                  : "Ask me anything about your dashboard data — incidents, events, attack phases, or severity levels."}
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {(incident ? INCIDENT_SUGGESTIONS : DASHBOARD_SUGGESTIONS).map((s) => (
+              {(evaluation ? EVALUATION_SUGGESTIONS : incident ? INCIDENT_SUGGESTIONS : DASHBOARD_SUGGESTIONS).map((s) => (
                 <button
                   key={s}
                   type="button"
