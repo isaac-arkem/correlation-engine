@@ -41,12 +41,21 @@ export function CardHeader({
 export function CardBody({
   children,
   className,
+  scroll = false,
 }: {
   children: ReactNode;
   className?: string;
+  /** Inner scrollbar for tiles in a fixed-height grid. Leave off on long pages. */
+  scroll?: boolean;
 }) {
   return (
-    <div className={cn("flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain p-2", className)}>
+    <div
+      className={cn(
+        "flex min-h-0 flex-1 flex-col p-2",
+        scroll && "overflow-y-auto overscroll-contain",
+        className,
+      )}
+    >
       {children}
     </div>
   );

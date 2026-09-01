@@ -9,7 +9,7 @@ export default function CorrelatePage() {
         <ContextTile kicker="engine" title="Run Correlation" />
       </TopBar>
 
-      <main className="flex-1 overflow-auto p-3">
+      <main className="min-h-0 flex-1 overflow-auto p-3">
         <div className="mx-auto max-w-2xl">
           <Card>
             <CardHeader title="New Correlation Run" />

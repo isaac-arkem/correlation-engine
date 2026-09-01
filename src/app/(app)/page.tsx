@@ -140,7 +140,7 @@ async function IncidentPanel({
       <CardHeader title="Incidents">
         <CountBadge>{formatNumber(incidents.length)}</CountBadge>
       </CardHeader>
-      <CardBody className="p-0">
+      <CardBody scroll className="p-0">
         <IncidentList incidents={incidents} query={query} />
       </CardBody>
     </>

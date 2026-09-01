@@ -75,20 +75,20 @@ export default async function IncidentDetailPage({
         <section className="grid h-[34rem] min-h-0 shrink-0 grid-rows-[8.5rem_5.75rem_minmax(0,1fr)_minmax(0,1.2fr)] gap-2 overflow-hidden lg:h-full lg:w-[18.5rem]">
           <Card>
             <CardHeader title="What happened" />
-            <CardBody className="p-3">
+            <CardBody scroll className="p-3">
               <ExecutiveSummary incident={incident} />
             </CardBody>
           </Card>
 
           <Card>
-            <CardBody className="p-3">
+            <CardBody scroll className="p-3">
               <RiskGauge score={incident.riskScore} />
             </CardBody>
           </Card>
 
           <Card>
             <CardHeader title="Recommended actions" />
-            <CardBody>
+            <CardBody scroll>
               <RecommendedActions status={incident.status} />
             </CardBody>
           </Card>
@@ -97,7 +97,7 @@ export default async function IncidentDetailPage({
             <CardHeader title="Kill chain">
               <CountBadge>{incident.phaseCount}/5</CountBadge>
             </CardHeader>
-            <CardBody>
+            <CardBody scroll>
               <KillChainTimeline
                 detected={incident.phasesDetected}
                 breakdown={incident.phaseBreakdown}
@@ -109,7 +109,7 @@ export default async function IncidentDetailPage({
         <section className="grid min-h-0 flex-1 grid-rows-[14rem_minmax(0,1fr)] gap-2 overflow-hidden">
           <Card>
             <CardHeader title="Attack timeline" />
-            <CardBody>
+            <CardBody scroll>
               <AttackTimelineChart events={incident.events} />
             </CardBody>
           </Card>
@@ -118,7 +118,7 @@ export default async function IncidentDetailPage({
             <CardHeader title="Linked events">
               <CountBadge>{formatNumber(incident.events.length)}</CountBadge>
             </CardHeader>
-            <CardBody>
+            <CardBody scroll>
               <EventTable
                 events={incident.events}
                 totalCount={incident.eventCount}

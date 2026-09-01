@@ -94,7 +94,7 @@ export default function MethodologyPage() {
         <ContextTile kicker="system design" title="Methodology" />
       </TopBar>
 
-      <main className="flex-1 overflow-auto p-3">
+      <main className="min-h-0 flex-1 overflow-auto p-3">
         <div className="mx-auto flex max-w-[48rem] flex-col gap-2">
           {/* Overview */}
           <Card>
@@ -131,9 +131,12 @@ export default function MethodologyPage() {
                 title="Ingestion"
                 description="Raw security logs are parsed from multiple sources into a unified NormalizedEvent format. Each event is tagged with its source, timestamp, IP addresses, ports, and payload metadata."
                 details={[
+                  "Two intake paths: file upload on Correlate, or a live poll from Elasticsearch using the same parsers",
                   "Suricata EVE JSON — network alerts, HTTP requests, SMB sessions, flow records, anomalies",
                   "Windows Security CSV — Event IDs 4624 (successful logon), 4625 (failed logon), 4798 (group enumeration)",
                   "PowerShell Operational CSV — script block logging, command invocations",
+                  "Auto-detect takes the top 3 Suricata alert source IPs as attackers and top destinations as victims; high-volume non-standard ports between that pair are treated as C2",
+                  "Endpoint events (Windows / PowerShell) have no IPs; they are merged into the primary detected pair",
                   "Flow filtering reduces noise: only scan probes and attack-relevant port traffic are kept",
                 ]}
               />
@@ -307,6 +310,10 @@ export default function MethodologyPage() {
               <div className="flex flex-col gap-3">
                 {[
                   {
+                    q: "Why auto-detect attacker and victim IPs?",
+                    a: "A lab or SME operator should not have to name hosts before a run. The engine ranks Suricata alert sources and destinations and keeps the top three of each. Endpoint events are then attached to the primary pair. This is a heuristic, not ground truth — Evaluation therefore does not treat every cartesian pairing of those IPs as a missed campaign.",
+                  },
+                  {
                     q: "Why IP-pair grouping instead of time-window clustering?",
                     a: "Time-window clustering groups events that occur close together, but concurrent attacks against different targets would be merged into one incident. IP-pair grouping ensures each attacker→victim relationship is tracked independently, even if attacks overlap in time.",
                   },
@@ -340,6 +347,38 @@ export default function MethodologyPage() {
             </CardBody>
           </Card>
 
+          <Card>
+            <CardHeader title="Evaluation method" />
+            <CardBody className="p-3">
+              <p className="text-[12px] leading-[19px] text-muted">
+                Evaluation measures this correlation engine, not Elasticsearch
+                or Suricata. The headline metric is alert reduction: classified
+                events divided by incidents. A campaign is counted only when
+                stored events between a pair already span two or more
+                kill-chain phases — the same rule the engine uses to create an
+                incident. Crossing every auto-detected IP would invent
+                campaigns that never existed in the logs.
+              </p>
+              <ul className="mt-3 flex flex-col gap-1">
+                {[
+                  "Reconstructed — a multi-stage pair that became an incident (true positive)",
+                  "Missed — a multi-stage pair that did not become an incident (false negative)",
+                  "Extra / false positive — an incident the operator rejects on review",
+                  "Suppressed — single-phase pairs, excluded by design and not scored as misses",
+                  "Precision = TP / (TP + FP), Recall = TP / (TP + FN), F1 = harmonic mean of both",
+                ].map((d) => (
+                  <li
+                    key={d}
+                    className="flex items-start gap-2 text-[11px] leading-[17px] text-muted"
+                  >
+                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-accent opacity-60" />
+                    {d}
+                  </li>
+                ))}
+              </ul>
+            </CardBody>
+          </Card>
+
           {/* Architecture */}
           <Card>
             <CardHeader title="Technology stack" />
@@ -353,6 +392,7 @@ export default function MethodologyPage() {
                   ["Endpoint sources", "Windows Event Viewer CSV exports"],
                   ["Authentication", "Supabase Auth (email/password + RLS)"],
                   ["Visualisation", "Recharts, Tailwind CSS"],
+                  ["Alert email", "Resend (critical / warning + manual forward)"],
                   ["Testing", "Vitest (34 unit tests)"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex flex-col gap-0.5 py-1">
