@@ -1,26 +1,108 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-base: #080808;
+  --color-field: #0d0d0d;
+  --color-hover: #181818;
+  --color-raised: #1e1e1e;
+  --color-line: #1e1e1e;
+  --color-line-strong: #3a3a3a;
+  --color-ink: #e5e5e5;
+  --color-muted: #838383;
+  --color-subtle: #525252;
+  --color-inverse: #080808;
+  --color-highlight: #ffffff;
+  --color-danger: #c55f5f;
+  --color-accent: #e0dd5b;
+  --color-accent-hover: #c4c049;
+  --color-ring: #3b82f6;
+  --color-success: #6fbf73;
+  --color-warning: #a88940;
+  --color-info: #60a5fa;
+  --color-neutral-800: #171717;
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-mono: var(--font-ibm-plex-mono);
+  --radius-brand: 4px;
 }
 
-/* @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-} */
+:root {
+  --ease: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+html,
+body {
+  background: var(--color-base);
+  color: var(--color-ink);
+  color-scheme: dark;
+}
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  font-size: 12px;
+  line-height: 18px;
+  -webkit-font-smoothing: antialiased;
+}
+
+a[href],
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+label:has(input[type="date"]),
+input[type="date"],
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled) {
+  cursor: pointer;
+}
+
+button:disabled,
+[aria-disabled="true"] {
+  cursor: not-allowed;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ring);
+  outline-offset: 2px;
+  border-radius: var(--radius-brand);
+}
+
+input:focus-visible {
+  outline: none;
+}
+
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--color-highlight);
+  caret-color: var(--color-highlight);
+  box-shadow: 0 0 0 1000px var(--color-base) inset;
+  transition: background-color 99999s ease-in-out 0s;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: rgb(120 120 120 / 35%);
+  border-radius: 9999px;
+}
+
+input[type="date"] {
+  color-scheme: dark;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.45;
+  filter: invert(0.8);
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 0.8;
 }
