@@ -17,6 +17,20 @@ function csvTime(h, m, s = 0) {
 
 const eve = [];
 
+// Ground truth. Declared here, beside the events that realise it, so the
+// answer key and the dataset cannot drift apart. Evaluation compares the
+// engine against THIS list rather than re-deriving one from its own output.
+const campaigns = [];
+
+function declare({ attacker, victim, phases, note }) {
+  campaigns.push({
+    attackerIp: attacker,
+    victimIp: victim,
+    expectedPhases: phases,
+    note,
+  });
+}
+
 function alert({ src, dest, sport, dport, sig, cat, time }) {
   eve.push({
     timestamp: time,
@@ -92,6 +106,19 @@ alert({
   time: ts(14, 18, 20),
 });
 
+declare({
+  attacker: A1,
+  victim: V1,
+  phases: [
+    "reconnaissance",
+    "delivery",
+    "exploitation",
+    "persistence",
+    "command_and_control",
+  ],
+  note: "Primary campaign: port sweep, .exe/.ps1 payloads, 4444 reverse shell. All Windows/PowerShell endpoint events merge into this pair, supplying exploitation and persistence.",
+});
+
 // Pair 2 — recon + delivery + C2
 const A2 = "10.20.30.5";
 const V2 = "10.20.40.20";
@@ -122,6 +149,13 @@ alert({
   sig: "ET TROJAN Possible Meterpreter C2",
   cat: "A Network Trojan was Detected",
   time: ts(14, 22, 10),
+});
+
+declare({
+  attacker: A2,
+  victim: V2,
+  phases: ["reconnaissance", "delivery", "command_and_control"],
+  note: "SSH scan, loader.exe over 8080, Meterpreter C2 on 5555. No endpoint telemetry, so no exploitation or persistence is expected.",
 });
 
 // Pair 3 — recon + delivery + C2
@@ -156,6 +190,13 @@ alert({
   time: ts(14, 28, 0),
 });
 
+declare({
+  attacker: A3,
+  victim: V3,
+  phases: ["reconnaissance", "delivery", "command_and_control"],
+  note: "Nmap scan, ransom.bat delivery, then outbound to high port 8888. C2 is expected because auto-detect promotes 8888 to a C2 port (>1024, uncommon, attacker to victim) — this campaign exercises the auto-detected C2 path rather than a preconfigured port.",
+});
+
 // Pair 4 — recon + delivery only (fewer alerts → not a top-3 attacker)
 alert({
   src: "198.51.100.44",
@@ -173,6 +214,13 @@ http({
   dport: 80,
   url: "/tmp/steal.exe",
   time: ts(14, 31, 0),
+});
+
+declare({
+  attacker: "198.51.100.44",
+  victim: V1,
+  phases: ["reconnaissance", "delivery"],
+  note: "Second attacker against the primary victim. Low alert volume, so it is NOT in the auto-detected top-3 attacker list — tests that classification still fires on the .exe URL rule for unknown hosts.",
 });
 
 // Pair 5 — recon + delivery
@@ -194,6 +242,18 @@ http({
   time: ts(14, 34, 0),
 });
 
+declare({
+  attacker: "203.0.113.77",
+  victim: "192.0.2.88",
+  phases: ["reconnaissance", "delivery"],
+  note: "Third-party pair involving neither the detected attacker nor victim. Verifies the engine correlates unknown hosts on signature rules alone.",
+});
+
+writeFileSync(
+  join(dir, "ground-truth.json"),
+  JSON.stringify({ label: "Synthetic lab", campaigns }, null, 2) + "\n",
+);
+
 writeFileSync(join(dir, "eve.json"), eve.map((e) => JSON.stringify(e)).join("\n") + "\n");
 
 const winHeader = "Level,Date and Time,Source,Event ID,Task Category";
@@ -214,4 +274,7 @@ const psRows = [
 ];
 writeFileSync(join(dir, "powershell.csv"), [psHeader, ...psRows].join("\n") + "\n");
 
-console.log(`Wrote ${eve.length} EVE events + Windows + PowerShell to ${dir}`);
+console.log(
+  `Wrote ${eve.length} EVE events + Windows + PowerShell to ${dir}\n` +
+    `Declared ground truth: ${campaigns.length} campaigns -> ${join(dir, "ground-truth.json")}`,
+);

@@ -1,0 +1,17 @@
+{
+  "label": "Lab capture — staged five-phase campaign",
+  "campaigns": [
+    {
+      "attackerIp": "192.168.64.2",
+      "victimIp": "192.168.64.3",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery",
+        "exploitation",
+        "persistence",
+        "command_and_control"
+      ],
+      "note": "Operator-declared from the experiment record: all five observable kill-chain phases were carried out against the victim host. Declared independently of engine output."
+    }
+  ]
+}

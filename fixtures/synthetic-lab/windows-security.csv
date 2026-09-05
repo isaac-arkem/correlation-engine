@@ -1,0 +1,4 @@
+Level,Date and Time,Source,Event ID,Task Category
+"Information","01/09/2026 14:10:05","Microsoft-Windows-Security-Auditing",4624,"Logon","Successful logon. Account Name: jdoe Source Network Address: 10.20.30.2 Process Name: C:\Windows\System32\svchost.exe"
+"Information","01/09/2026 14:10:20","Microsoft-Windows-Security-Auditing",4798,"User Account Management","A user's local group membership was enumerated. Account Name: jdoe Source Network Address: 10.20.30.2"
+"Failure","01/09/2026 14:03:00","Microsoft-Windows-Security-Auditing",4625,"Logon","Failed logon. Account Name: administrator Source Network Address: 10.20.30.2"

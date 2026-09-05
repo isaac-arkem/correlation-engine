@@ -106,3 +106,25 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 input[type="date"]::-webkit-calendar-picker-indicator:hover {
   opacity: 0.8;
 }
+
+/* Indeterminate sweep for the filter progress bar (see filter-progress.tsx). */
+@keyframes filter-progress {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.filter-progress-sweep {
+  animation: filter-progress 1.1s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filter-progress-sweep {
+    animation: none;
+    width: 100%;
+    opacity: 0.6;
+  }
+}

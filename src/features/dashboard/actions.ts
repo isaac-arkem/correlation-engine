@@ -73,23 +73,37 @@ export async function getCorrelationRuns(): Promise<CorrelationRun[]> {
 
   const runs = data ?? [];
 
-  // Get live counts from the actual tables so the dropdown is always accurate
-  const counts = await Promise.all(
-    runs.map(async (row) => {
-      const [{ count: ec }, { count: ic }] = await Promise.all([
-        sb.from('events').select('id', { count: 'exact', head: true }).eq('run_id', row.id),
-        sb.from('incidents').select('id', { count: 'exact', head: true }).eq('run_id', row.id),
-      ]);
-      return { eventCount: ec ?? 0, incidentCount: ic ?? 0 };
-    })
-  );
+  // Live counts so the dropdown is always accurate. One grouped pass rather
+  // than two exact-count queries per run — the N+1 form cost ~7 s per page
+  // load on runs with large event counts.
+  const counts = new Map<string, { eventCount: number; incidentCount: number }>();
 
-  return runs.map((row, i) => ({
+  const { data: countRows, error: countErr } = await sb.rpc('get_run_counts');
+
+  if (!countErr && countRows) {
+    for (const row of countRows) {
+      counts.set(row.run_id, {
+        eventCount: Number(row.event_count) || 0,
+        incidentCount: Number(row.incident_count) || 0,
+      });
+    }
+  } else {
+    // Fallback for databases without add_dashboard_perf.sql applied: use the
+    // counts cached on the run record rather than reintroducing the N+1.
+    for (const row of runs) {
+      counts.set(row.id, {
+        eventCount: row.event_count ?? 0,
+        incidentCount: row.incident_count ?? 0,
+      });
+    }
+  }
+
+  return runs.map((row) => ({
     id: row.id,
     label: row.label,
     sourceType: row.source_type,
-    eventCount: counts[i].eventCount,
-    incidentCount: counts[i].incidentCount,
+    eventCount: counts.get(row.id)?.eventCount ?? 0,
+    incidentCount: counts.get(row.id)?.incidentCount ?? 0,
     status: row.status as CorrelationRun['status'],
     createdAt: row.created_at,
     completedAt: row.completed_at,
@@ -148,21 +162,39 @@ export async function getOverviewStats(
       }
     }
   } else {
-    // No cached data — query events directly and count in code
-    // This works for all non-legacy runs (which have manageable event counts)
-    let q = sb.from('events').select('source, kill_chain_phase').eq('run_id', runId);
-    if (from) q = q.gte('event_time', from);
-    if (to) q = q.lte('event_time', to);
-    const { data: evts } = await q.limit(10000);
+    // A date range (or a run with no cached counts) needs counts over the
+    // filtered set. Aggregate in Postgres: fetching rows to count them in JS
+    // was slow AND wrong — PostgREST caps a response at a fixed row limit well
+    // below the requested one, so the counts came from a small sample.
+    const { data: stats, error } = await sb.rpc('get_overview_stats', {
+      p_run_id: runId,
+      from_date: from ?? null,
+      to_date: to ?? null,
+    });
 
-    for (const ev of evts ?? []) {
-      if (ev.source) bySource[ev.source] = (bySource[ev.source] ?? 0) + 1;
-      if (ev.kill_chain_phase) {
-        byPhase[ev.kill_chain_phase] = (byPhase[ev.kill_chain_phase] ?? 0) + 1;
-        classified++;
+    if (!error && stats) {
+      const s = stats;
+      bySource = s.by_source ?? {};
+      byPhase = s.by_phase ?? {};
+      totalEvents = Number(s.total) || 0;
+      classified = Number(s.classified) || 0;
+    } else {
+      // Fallback for databases without add_dashboard_perf.sql applied. Capped
+      // and approximate — the RPC path above is the correct one.
+      let q = sb.from('events').select('source, kill_chain_phase').eq('run_id', runId);
+      if (from) q = q.gte('event_time', from);
+      if (to) q = q.lte('event_time', to);
+      const { data: evts } = await q.limit(1000);
+
+      for (const ev of evts ?? []) {
+        if (ev.source) bySource[ev.source] = (bySource[ev.source] ?? 0) + 1;
+        if (ev.kill_chain_phase) {
+          byPhase[ev.kill_chain_phase] = (byPhase[ev.kill_chain_phase] ?? 0) + 1;
+          classified++;
+        }
       }
+      totalEvents = (evts ?? []).length;
     }
-    totalEvents = (evts ?? []).length;
   }
 
   const bySeverity: Record<string, number> = {};

@@ -2,6 +2,18 @@
  * run.ts — Orchestration script for the correlation engine.
  *
  * Usage: npx tsx src/lib/correlation/run.ts [--label "My Run"]
+ *                                          [--ground-truth path/to/truth.json]
+ *                                          [--from 2026-05-01] [--to 2026-07-31]
+ *
+ * --from/--to bound the ANALYSIS WINDOW. Events outside it are dropped at
+ * parse time, before classification, so the window is applied consistently
+ * across all three sources. The bounds are recorded in the run label and
+ * printed in the summary so a scoped run is never mistaken for a full one.
+ *
+ * A ground-truth file declares the campaigns that are actually present in
+ * the data, independently of what the engine finds. When supplied, the run
+ * prints a detection report against it and stores it on the run record so
+ * the evaluation page can compute non-circular precision and recall.
  *
  * Picks the event source (FileSource for demo), ingests all events,
  * classifies each into a kill-chain phase, correlates multi-stage
@@ -19,19 +31,54 @@ import { correlate } from './correlate';
 import { createRun, completeRun, failRun, persistEvents, persistIncidents } from './persist';
 import { setCorrelationConfig, resetConfigCache } from './config';
 import { autoDetectConfig } from './auto-detect';
+import { loadGroundTruth, compareToGroundTruth, type GroundTruth } from './ground-truth';
 
-function parseArgs(): { label: string } {
+function parseArgs(): {
+  label: string;
+  groundTruthPath?: string;
+  from?: string;
+  to?: string;
+} {
   const args = process.argv.slice(2);
   const labelIdx = args.indexOf('--label');
   const label =
     labelIdx !== -1 && args[labelIdx + 1]
       ? args[labelIdx + 1]
       : `CLI Run — ${new Date().toISOString().slice(0, 16)}`;
-  return { label };
+
+  const gtIdx = args.indexOf('--ground-truth');
+  const groundTruthPath =
+    gtIdx !== -1 && args[gtIdx + 1]
+      ? args[gtIdx + 1]
+      : process.env.GROUND_TRUTH_PATH || undefined;
+
+  const fromIdx = args.indexOf('--from');
+  const toIdx = args.indexOf('--to');
+  const from = fromIdx !== -1 && args[fromIdx + 1] ? args[fromIdx + 1] : undefined;
+  const to = toIdx !== -1 && args[toIdx + 1] ? args[toIdx + 1] : undefined;
+
+  return { label, groundTruthPath, from, to };
+}
+
+/**
+ * Expand a bare date to a full-day bound so `--from 2026-05-01 --to 2026-07-31`
+ * means the whole of 1 May through the whole of 31 July, not midnight to
+ * midnight (which would silently drop the last day).
+ */
+function normaliseBound(value: string | undefined, end: boolean): string | undefined {
+  if (!value) return undefined;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return end ? `${value}T23:59:59.999999` : `${value}T00:00:00.000000`;
+  }
+  return value;
 }
 
 async function main() {
-  const { label } = parseArgs();
+  const { label, groundTruthPath, from: rawFrom, to: rawTo } = parseArgs();
+
+  const from = normaliseBound(rawFrom, false);
+  const to = normaliseBound(rawTo, true);
+  const range = from || to ? { from, to } : undefined;
 
   const evePath = process.env.EVE_JSON_PATH;
   const winSecPath = process.env.WIN_SECURITY_CSV_PATH;
@@ -46,9 +93,26 @@ async function main() {
 
   let runId: string | null = null;
 
+  // Loaded up front: a malformed answer key should abort before a long run,
+  // not after it.
+  let groundTruth: GroundTruth | null = null;
+  if (groundTruthPath) {
+    groundTruth = await loadGroundTruth(groundTruthPath);
+  }
+
   console.log('=== CORRELATION ENGINE — RUN SUMMARY ===\n');
   console.log(`Label: ${label}`);
-  console.log('Source: FileSource (demo mode)\n');
+  console.log('Source: FileSource (demo mode)');
+  console.log(
+    range
+      ? `Analysis window: ${from ?? '(open)'} → ${to ?? '(open)'}`
+      : 'Analysis window: none — the full capture is processed',
+  );
+  console.log(
+    groundTruth
+      ? `Ground truth: ${groundTruth.campaigns.length} declared campaigns (${groundTruthPath})\n`
+      : 'Ground truth: none declared — evaluation will fall back to the derived method\n',
+  );
 
   try {
     // Step 1: Ingest
@@ -60,7 +124,7 @@ async function main() {
     });
 
     const startTime = Date.now();
-    const events = await source.getSecurityEvents();
+    const events = await source.getSecurityEvents(range);
     const ingestTime = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`Ingestion completed in ${ingestTime}s\n`);
 
@@ -138,6 +202,57 @@ async function main() {
       }
     }
 
+    // Detection report against the declared ground truth
+    if (groundTruth) {
+      console.log('--- GROUND TRUTH COMPARISON ---');
+      const comparisons = compareToGroundTruth(
+        groundTruth,
+        incidents.map((i) => ({
+          attackerIp: i.attackerIp,
+          victimIp: i.victimIp,
+          phases: i.phasesDetected,
+        })),
+      );
+
+      for (const cmp of comparisons) {
+        const { campaign } = cmp;
+        const mark = cmp.found ? (cmp.missingPhases.length ? 'PARTIAL' : 'FOUND  ') : 'MISSED ';
+        console.log(`  [${mark}] ${campaign.attackerIp} → ${campaign.victimIp}`);
+        console.log(`    Expected: ${campaign.expectedPhases.join(', ')}`);
+        console.log(`    Detected: ${cmp.detectedPhases.join(', ') || '(none)'}`);
+        if (cmp.missingPhases.length) {
+          console.log(`    MISSING:  ${cmp.missingPhases.join(', ')}`);
+        }
+        if (cmp.unexpectedPhases.length) {
+          console.log(`    EXTRA:    ${cmp.unexpectedPhases.join(', ')}`);
+        }
+      }
+
+      const tp = comparisons.filter((c) => c.found).length;
+      const fn = comparisons.length - tp;
+      const declaredPairs = new Set(
+        comparisons.map((c) => [c.campaign.attackerIp, c.campaign.victimIp].sort().join('|')),
+      );
+      const fp = incidents.filter(
+        (i) => !declaredPairs.has([i.attackerIp, i.victimIp].sort().join('|')),
+      ).length;
+
+      const precision = tp + fp > 0 ? tp / (tp + fp) : 0;
+      const recall = tp + fn > 0 ? tp / (tp + fn) : 0;
+      const f1 =
+        precision + recall > 0 ? (2 * precision * recall) / (precision + recall) : 0;
+
+      console.log();
+      console.log(`  TP: ${tp}   FP: ${fp}   FN: ${fn}`);
+      console.log(
+        `  Precision: ${precision.toFixed(3)}   Recall: ${recall.toFixed(3)}   F1: ${f1.toFixed(3)}`,
+      );
+      console.log(
+        `  (measured against ${comparisons.length} declared campaigns — not self-derived)`,
+      );
+      console.log();
+    }
+
     // Step 4: Persist to Supabase (if service role key is set)
     if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
       console.log('--- STEP 4: PERSISTENCE ---');
@@ -148,6 +263,7 @@ async function main() {
         attackerIps: cfg.attackerIps,
         victimIps: cfg.victimIps,
         c2Ports: [...cfg.c2Ports],
+        groundTruth,
       });
 
       const classifiedEvents = events.filter((e) => e.killChainPhase);

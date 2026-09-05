@@ -1,0 +1,55 @@
+{
+  "label": "Synthetic lab",
+  "campaigns": [
+    {
+      "attackerIp": "10.20.30.2",
+      "victimIp": "10.20.40.10",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery",
+        "exploitation",
+        "persistence",
+        "command_and_control"
+      ],
+      "note": "Primary campaign: port sweep, .exe/.ps1 payloads, 4444 reverse shell. All Windows/PowerShell endpoint events merge into this pair, supplying exploitation and persistence."
+    },
+    {
+      "attackerIp": "10.20.30.5",
+      "victimIp": "10.20.40.20",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery",
+        "command_and_control"
+      ],
+      "note": "SSH scan, loader.exe over 8080, Meterpreter C2 on 5555. No endpoint telemetry, so no exploitation or persistence is expected."
+    },
+    {
+      "attackerIp": "10.20.30.8",
+      "victimIp": "10.20.40.30",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery",
+        "command_and_control"
+      ],
+      "note": "Nmap scan, ransom.bat delivery, then outbound to high port 8888. C2 is expected because auto-detect promotes 8888 to a C2 port (>1024, uncommon, attacker to victim) — this campaign exercises the auto-detected C2 path rather than a preconfigured port."
+    },
+    {
+      "attackerIp": "198.51.100.44",
+      "victimIp": "10.20.40.10",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery"
+      ],
+      "note": "Second attacker against the primary victim. Low alert volume, so it is NOT in the auto-detected top-3 attacker list — tests that classification still fires on the .exe URL rule for unknown hosts."
+    },
+    {
+      "attackerIp": "203.0.113.77",
+      "victimIp": "192.0.2.88",
+      "expectedPhases": [
+        "reconnaissance",
+        "delivery"
+      ],
+      "note": "Third-party pair involving neither the detected attacker nor victim. Verifies the engine correlates unknown hosts on signature rules alone."
+    }
+  ]
+}
