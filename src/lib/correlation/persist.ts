@@ -1,29 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import type { NormalizedEvent, Incident } from './types';
-
-const CANONICAL_PHASES: Record<string, string> = {
-  reconnaissance: 'reconnaissance',
-  recon: 'reconnaissance',
-  scanning: 'reconnaissance',
-  discovery: 'reconnaissance',
-  delivery: 'delivery',
-  weaponization: 'delivery',
-  exploitation: 'exploitation',
-  exploit: 'exploitation',
-  execution: 'exploitation',
-  persistence: 'persistence',
-  installation: 'persistence',
-  command_and_control: 'command_and_control',
-  'command-and-control': 'command_and_control',
-  c2: 'command_and_control',
-  cnc: 'command_and_control',
-};
-
-function normalizePhase(phase: string | undefined | null): string | null {
-  if (!phase) return null;
-  const key = phase.toLowerCase().trim().replace(/[\s-]+/g, '_');
-  return CANONICAL_PHASES[key] ?? key;
-}
+import type { GroundTruth } from './ground-truth';
+import { normalizePhase } from './phase-vocab';
 
 const CANONICAL_SOURCES: Record<string, string> = {
   suricata: 'suricata',
@@ -61,6 +39,8 @@ export interface RunConfig {
   victimIps: string[];
   c2Ports: number[];
   connectionId?: string;
+  /** Declared expected campaigns, stored so evaluation is non-circular. */
+  groundTruth?: GroundTruth | null;
 }
 
 export async function createRun(config: RunConfig): Promise<string> {
@@ -75,6 +55,7 @@ export async function createRun(config: RunConfig): Promise<string> {
       c2_ports: config.c2Ports,
       status: 'running',
       connection_id: config.connectionId ?? null,
+      ground_truth: config.groundTruth ?? null,
     })
     .select('id')
     .single();

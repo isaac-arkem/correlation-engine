@@ -39,6 +39,8 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
     setFnCount(data.falseNegatives);
   }, [data.falsePositives, data.falseNegatives, data.runId]);
 
+  const declared = data.groundTruthMode === "declared";
+
   const { precision, recall, f1 } = computeMetrics(
     data.truePositives,
     fpCount,
@@ -49,11 +51,43 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
     <div className="flex flex-col gap-3">
       <Card>
         <CardBody className="p-3">
-          <p className="text-[12px] leading-[18px] text-muted">
-            This page measures the correlation engine, not Elasticsearch.
-            A campaign is only counted if classified events between a pair
-            span two or more kill-chain phases — the same rule the engine
-            uses. Crossing every auto-detected IP is not ground truth.
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              className="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider"
+              style={
+                declared
+                  ? { background: "#1d3b24", color: "#6fbf73" }
+                  : { background: "#3b2f1d", color: "#a88940" }
+              }
+            >
+              {declared ? "Declared ground truth" : "Derived ground truth"}
+            </span>
+            {data.groundTruthLabel ? (
+              <span className="font-mono text-[10px] text-subtle">
+                {data.groundTruthLabel} · {data.campaigns.length} campaign
+                {data.campaigns.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </div>
+          <p className="mt-2 text-[12px] leading-[18px] text-muted">
+            {declared ? (
+              <>
+                Campaigns were declared independently of this run, so precision
+                and recall measure detection accuracy against external truth. A
+                campaign the classifier missed entirely still counts as a false
+                negative.
+              </>
+            ) : (
+              <>
+                No ground truth was declared for this run, so the answer key is
+                re-derived from the events this engine classified. That is
+                circular: it measures internal consistency between
+                classification and correlation, and an attack the classifier
+                missed entirely is invisible here rather than counted as a
+                false negative. Treat these figures as a consistency check, not
+                as detection accuracy.
+              </>
+            )}
           </p>
         </CardBody>
       </Card>
@@ -99,8 +133,10 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
         <CardBody className="p-0">
           {data.campaigns.length === 0 ? (
             <p className="px-3 py-4 text-[11px] leading-[17px] text-muted">
-              No attacker→victim pair in this run has two or more kill-chain
-              phases. Single-phase noise is suppressed by design
+              {declared
+                ? "The declared ground truth for this run contains no campaigns."
+                : "No attacker→victim pair in this run has two or more kill-chain phases."}{" "}
+              Single-phase noise is suppressed by design
               {data.suppressed > 0
                 ? ` (${data.suppressed} pair${data.suppressed === 1 ? "" : "s"}).`
                 : "."}
@@ -110,9 +146,14 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
               <table className="w-full text-[11px]">
                 <thead>
                   <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-subtle">
-                    <th className="px-3 py-2 font-medium">Multi-stage pair</th>
+                    <th className="px-3 py-2 font-medium">
+                      {declared ? "Declared campaign" : "Multi-stage pair"}
+                    </th>
                     <th className="px-3 py-2 font-medium">Reconstructed</th>
                     <th className="px-3 py-2 font-medium">Phases</th>
+                    {declared ? (
+                      <th className="px-3 py-2 font-medium">Missing</th>
+                    ) : null}
                     <th className="px-3 py-2 font-medium">Events</th>
                   </tr>
                 </thead>
@@ -144,9 +185,26 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
                       </td>
                       <td className="px-3 py-2 text-muted">
                         {c.found
-                          ? `${c.phaseCount}/5 · ${c.phasesDetected.map(phaseShortLabel).join(" → ")}`
-                          : "—"}
+                          ? `${declared ? `${c.phaseCount}/${c.expectedPhases.length}` : `${c.phaseCount}/5`} · ${c.phasesDetected.map(phaseShortLabel).join(" → ")}`
+                          : declared
+                            ? `expected ${c.expectedPhases.map(phaseShortLabel).join(" → ")}`
+                            : "—"}
                       </td>
+                      {declared ? (
+                        <td className="px-3 py-2">
+                          {c.missingPhases.length > 0 ? (
+                            <span style={{ color: "#c55f5f" }}>
+                              {c.missingPhases.map(phaseShortLabel).join(", ")}
+                            </span>
+                          ) : c.unexpectedPhases.length > 0 ? (
+                            <span style={{ color: "#a88940" }}>
+                              +{c.unexpectedPhases.map(phaseShortLabel).join(", ")}
+                            </span>
+                          ) : (
+                            <span className="text-subtle">—</span>
+                          )}
+                        </td>
+                      ) : null}
                       <td className="px-3 py-2 font-mono text-muted">
                         {c.found ? formatNumber(c.eventCount) : "—"}
                       </td>
@@ -156,13 +214,25 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
               </table>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-px border-t border-line sm:grid-cols-4">
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-px border-t border-line",
+              declared ? "sm:grid-cols-5" : "sm:grid-cols-4",
+            )}
+          >
             <MiniStat
               label="Reconstructed"
               value={data.reconstructed}
               color="#6fbf73"
             />
             <MiniStat label="Missed" value={data.missed} color="#c55f5f" />
+            {declared ? (
+              <MiniStat
+                label="Partial (phases missing)"
+                value={data.partial}
+                color="#a88940"
+              />
+            ) : null}
             <MiniStat
               label="Extra incidents"
               value={data.extra}
@@ -201,21 +271,33 @@ export function MetricsPanel({ data }: { data: EvaluationData }) {
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
             <CountBlock
               label="True positives"
-              hint="multi-stage pairs that became incidents"
+              hint={
+                declared
+                  ? "declared campaigns the engine reconstructed"
+                  : "multi-stage pairs that became incidents"
+              }
               value={data.truePositives}
               color="#6fbf73"
               locked
             />
             <CountBlock
               label="False positives"
-              hint="incidents that were not a multi-stage pair — raise if a reconstruction was wrong"
+              hint={
+                declared
+                  ? "incidents matching no declared campaign — raise if a reconstruction was wrong"
+                  : "incidents that were not a multi-stage pair — raise if a reconstruction was wrong"
+              }
               value={fpCount}
               color="#c55f5f"
               onChange={setFpCount}
             />
             <CountBlock
               label="False negatives"
-              hint="pairs with ≥2 phases but no incident — raise if you ran an attack the engine missed"
+              hint={
+                declared
+                  ? "declared campaigns with no incident — measured, not guessed"
+                  : "pairs with ≥2 phases but no incident — raise if you ran an attack the engine missed"
+              }
               value={fnCount}
               color="#a88940"
               onChange={setFnCount}

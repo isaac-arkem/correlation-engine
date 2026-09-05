@@ -1,10 +1,15 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { useCallback, useState, useTransition } from "react";
 
 import { Caption } from "@/components/ui/caption";
 import { cn } from "@/lib/utils/cn";
+import {
+  FilterPendingChip,
+  FilterProgressBar,
+} from "@/features/dashboard/components/filter-progress";
+import { useFilterNav } from "@/features/dashboard/lib/use-filter-nav";
 import { deleteRun } from "../actions";
 
 interface Run {
@@ -25,7 +30,7 @@ export function RunSelector({
   activeRunId: string;
 }) {
   const router = useRouter();
-  const params = useSearchParams();
+  const { isPending: isSwitching, navigate, params } = useFilterNav();
   const [confirmId, setConfirmId] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
@@ -34,10 +39,9 @@ export function RunSelector({
       const next = new URLSearchParams(params.toString());
       next.set("run", runId);
       next.delete("live");
-      const query = next.toString();
-      router.replace(query ? `?${query}` : "/", { scroll: false });
+      navigate(next);
     },
-    [params, router],
+    [params, navigate],
   );
 
   const visibleRuns = runs.filter((r) => r.status === "completed" || r.status === "running");
@@ -71,15 +75,22 @@ export function RunSelector({
 
   return (
     <div className="relative flex flex-col gap-1">
-      <Caption>Dataset</Caption>
+      <FilterProgressBar active={isSwitching} />
+
+      <div className="flex items-center gap-2">
+        <Caption>Dataset</Caption>
+        <FilterPendingChip active={isSwitching} label="Loading dataset…" />
+      </div>
       <div className="flex items-center gap-1.5">
         <div
           className={cn(
             "flex h-8 flex-1 items-center rounded-md border border-line bg-field px-1",
+            isSwitching && "opacity-50",
           )}
         >
           <select
             value={activeRunId}
+            disabled={isSwitching}
             onChange={(e) => selectRun(e.target.value)}
             className="w-full min-w-[10rem] bg-transparent font-mono text-[11px] leading-4 text-ink outline-none"
           >
@@ -97,11 +108,12 @@ export function RunSelector({
           <button
             type="button"
             onClick={handleDeleteClick}
+            disabled={isSwitching}
             title="Delete this dataset"
             className={cn(
               "flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-line bg-field",
               "text-[12px] text-subtle hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400",
-              "transition-colors",
+              "transition-colors disabled:opacity-40",
             )}
           >
             <svg

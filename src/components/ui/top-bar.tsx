@@ -64,22 +64,26 @@ export function FilterGroup({
 export function FilterButton({
   active,
   onClick,
+  disabled,
   children,
 }: {
   active: boolean;
   onClick?: () => void;
+  disabled?: boolean;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-pressed={active}
       className={cn(
         "h-7 rounded-[5px] px-2.5 text-[11px] leading-4",
         active
           ? "bg-field font-medium text-ink"
           : "text-muted hover:text-ink",
+        disabled && "opacity-40",
       )}
     >
       {children}

@@ -80,6 +80,15 @@ export type Database = {
           status: 'running' | 'completed' | 'failed';
           error: string | null;
           connection_id: string | null;
+          ground_truth: {
+            label?: string;
+            campaigns: Array<{
+              attackerIp: string;
+              victimIp: string;
+              expectedPhases: string[];
+              note?: string;
+            }>;
+          } | null;
           poll_count: number;
           last_poll_at: string | null;
           created_at: string;
@@ -234,6 +243,19 @@ export type Database = {
       get_incident_events: {
         Args: { p_incident_id: string; max_non_recon?: number; max_recon?: number };
         Returns: Database['public']['Tables']['events']['Row'][];
+      };
+      get_overview_stats: {
+        Args: { p_run_id: string; from_date?: string | null; to_date?: string | null };
+        Returns: {
+          total: number;
+          classified: number;
+          by_source: Record<string, number> | null;
+          by_phase: Record<string, number> | null;
+        };
+      };
+      get_run_counts: {
+        Args: Record<string, never>;
+        Returns: { run_id: string; event_count: number; incident_count: number }[];
       };
     };
     Enums: {

