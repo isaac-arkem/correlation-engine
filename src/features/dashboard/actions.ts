@@ -123,6 +123,26 @@ export async function getLatestRunId(): Promise<string | null> {
   return data?.id ?? null;
 }
 
+/**
+ * PostgREST `or` filter deciding which incidents a date range shows.
+ * Engine incidents (no scope) must lie wholly inside the range. A scoped
+ * incident was computed for one window only, so it appears just when the
+ * selected range sits inside that window, and never under "All".
+ */
+function incidentRangeFilter(from?: string, to?: string): string {
+  const unscoped = [
+    'scope_from.is.null',
+    from && `first_seen.gte."${from}"`,
+    to && `last_seen.lte."${to}"`,
+  ]
+    .filter(Boolean)
+    .join(',');
+  if (from && to) {
+    return `and(${unscoped}),and(scope_from.lte."${from}",scope_to.gte."${to}")`;
+  }
+  return `and(${unscoped})`;
+}
+
 export async function getOverviewStats(
   runId: string,
   from?: string,
@@ -134,10 +154,11 @@ export async function getOverviewStats(
   const [{ data: run }, { data: incidents }] = await Promise.all([
     sb.from('correlation_runs').select('event_count, source_counts, phase_counts').eq('id', runId).single(),
     (() => {
-      let q = sb.from('incidents').select('severity, status').eq('run_id', runId);
-      if (from) q = q.gte('first_seen', from);
-      if (to) q = q.lte('last_seen', to);
-      return q;
+      return sb
+        .from('incidents')
+        .select('severity, status')
+        .eq('run_id', runId)
+        .or(incidentRangeFilter(from, to));
     })(),
   ]);
 
@@ -227,16 +248,12 @@ export async function getIncidents(
 ): Promise<IncidentSummary[]> {
   const sb = createSupabaseAdminClient();
 
-  let query = sb
+  const { data } = await sb
     .from('incidents')
     .select('*')
     .eq('run_id', runId)
+    .or(incidentRangeFilter(from, to))
     .order('risk_score', { ascending: false });
-
-  if (from) query = query.gte('first_seen', from);
-  if (to) query = query.lte('last_seen', to);
-
-  const { data } = await query;
 
   return (data ?? []).map((row) => ({
     id: row.id,

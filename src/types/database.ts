@@ -171,6 +171,8 @@ export type Database = {
           status: 'new' | 'investigating' | 'resolved' | 'false_positive';
           status_changed_at: string | null;
           status_changed_by: string | null;
+          scope_from: string | null;
+          scope_to: string | null;
           created_at: string;
         };
         Insert: {
@@ -189,6 +191,8 @@ export type Database = {
           status?: 'new' | 'investigating' | 'resolved' | 'false_positive';
           status_changed_at?: string | null;
           status_changed_by?: string | null;
+          scope_from?: string | null;
+          scope_to?: string | null;
           created_at?: string;
         };
         Update: Partial<Database['public']['Tables']['incidents']['Insert']>;

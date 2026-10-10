@@ -144,11 +144,15 @@ export async function persistEvents(
       kill_chain_phase: normalizePhase(ev.killChainPhase),
     }));
 
-    const { data, error } = await sb.from('events').insert(rows).select('id');
-
+    // A skipped batch silently under-counts the run, so retry once and then
+    // fail the run rather than complete it with missing events.
+    let { data, error } = await sb.from('events').insert(rows).select('id');
     if (error) {
-      console.error(`[persist] Batch ${i / BATCH_SIZE + 1} failed:`, error.message);
-      continue;
+      console.error(`[persist] Batch ${i / BATCH_SIZE + 1} failed, retrying:`, error.message);
+      ({ data, error } = await sb.from('events').insert(rows).select('id'));
+    }
+    if (error) {
+      throw new Error(`Event batch ${i / BATCH_SIZE + 1} failed twice: ${error.message}`);
     }
 
     if (data) {
