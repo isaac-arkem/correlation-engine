@@ -174,6 +174,9 @@ export async function getEvaluationData(
           "id, attacker_ip, victim_ip, severity, risk_score, phases_detected, event_count, summary, status",
         )
         .eq("run_id", runId)
+        // Scoped incidents re-present an engine incident over a sub-window;
+        // counting them would score one detection twice.
+        .is("scope_from", null)
         .order("risk_score", { ascending: false }),
     ]);
 
