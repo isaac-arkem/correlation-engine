@@ -29,7 +29,7 @@ import { FileSource } from './sources/fileSource';
 import { classifyAll } from './classify';
 import { correlate } from './correlate';
 import { createRun, completeRun, failRun, persistEvents, persistIncidents } from './persist';
-import { setCorrelationConfig, resetConfigCache } from './config';
+import { setCorrelationConfig, resetConfigCache, type CorrelationConfig } from './config';
 import { autoDetectConfig } from './auto-detect';
 import { loadGroundTruth, compareToGroundTruth, type GroundTruth } from './ground-truth';
 
@@ -38,6 +38,7 @@ function parseArgs(): {
   groundTruthPath?: string;
   from?: string;
   to?: string;
+  declared?: CorrelationConfig;
 } {
   const args = process.argv.slice(2);
   const labelIdx = args.indexOf('--label');
@@ -57,7 +58,25 @@ function parseArgs(): {
   const from = fromIdx !== -1 && args[fromIdx + 1] ? args[fromIdx + 1] : undefined;
   const to = toIdx !== -1 && args[toIdx + 1] ? args[toIdx + 1] : undefined;
 
-  return { label, groundTruthPath, from, to };
+  // --attacker/--victim/--c2-ports declare the hosts under study instead of
+  // auto-detecting them. Auto-detect ranks IPs by Suricata alert volume, so
+  // routine noise (e.g. APT package-update alerts) can outrank the real attack.
+  const list = (flag: string) => {
+    const i = args.indexOf(flag);
+    return i !== -1 && args[i + 1] ? args[i + 1].split(',').map((s) => s.trim()).filter(Boolean) : undefined;
+  };
+  const attackerIps = list('--attacker');
+  const victimIps = list('--victim');
+  const c2Ports = list('--c2-ports');
+  if (!!attackerIps !== !!victimIps) {
+    console.error('--attacker and --victim must be given together');
+    process.exit(1);
+  }
+  const declared = attackerIps && victimIps
+    ? { attackerIps, victimIps, c2Ports: new Set((c2Ports ?? []).map(Number)) }
+    : undefined;
+
+  return { label, groundTruthPath, from, to, declared };
 }
 
 /**
@@ -74,7 +93,7 @@ function normaliseBound(value: string | undefined, end: boolean): string | undef
 }
 
 async function main() {
-  const { label, groundTruthPath, from: rawFrom, to: rawTo } = parseArgs();
+  const { label, groundTruthPath, from: rawFrom, to: rawTo, declared } = parseArgs();
 
   const from = normaliseBound(rawFrom, false);
   const to = normaliseBound(rawTo, true);
@@ -154,9 +173,13 @@ async function main() {
     }
     console.log();
 
-    // Auto-detect attacker/victim IPs and C2 ports
+    // Declared attacker/victim IPs and C2 ports, or auto-detected ones
     resetConfigCache();
-    const cfg = autoDetectConfig(events);
+    const cfg = declared ?? autoDetectConfig(events);
+    console.log(
+      `Hosts: ${declared ? 'declared' : 'auto-detected'} — attackers ${cfg.attackerIps.join(', ')}; ` +
+        `victims ${cfg.victimIps.join(', ')}; C2 ports ${[...cfg.c2Ports].join(', ') || 'none'}\n`,
+    );
     setCorrelationConfig(cfg);
 
     // Step 2: Classify
