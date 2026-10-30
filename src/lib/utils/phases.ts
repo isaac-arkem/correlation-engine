@@ -84,6 +84,7 @@ export function sourceLabel(source: string): string {
     suricata: 'Suricata IDS',
     windows_security: 'Windows Security',
     powershell: 'PowerShell',
+    windows_defender: 'Windows Defender',
   };
   return labels[source] ?? source.replace(/_/g, ' ');
 }

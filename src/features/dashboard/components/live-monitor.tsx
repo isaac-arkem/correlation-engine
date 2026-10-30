@@ -61,6 +61,7 @@ export function LiveMonitor() {
       setActive(false);
       setError(null);
       clearLiveFlag();
+      router.refresh();
     }
 
     async function tick() {
@@ -91,6 +92,9 @@ export function LiveMonitor() {
         const r = data as PollResult;
         setResult(r);
         setError(null);
+        // Re-fetch the server-rendered overview panels so they build up live
+        // as each cycle ingests more events, instead of staying at page-load state.
+        router.refresh();
 
         if (r.pollCount >= r.maxPolls) {
           await markDone();

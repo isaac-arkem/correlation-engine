@@ -173,6 +173,11 @@ function classifyPowerShell(ev: NormalizedEvent): string | undefined {
 function classifyWindowsSecurity(ev: NormalizedEvent): string | undefined {
   const eventId = ev.eventId;
 
+  // Windows Defender malware detections (1116 = detected, 1117 = action taken).
+  // In this capture Defender flagged the implant WindowsUpdate.exe planted in
+  // the user's Startup folder — a reboot-surviving persistence mechanism.
+  if (eventId === 1116 || eventId === 1117) return 'persistence';
+
   // Successful logon — supporting signal for valid-accounts access
   if (eventId === 4624) return 'exploitation';
 

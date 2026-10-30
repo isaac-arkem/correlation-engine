@@ -59,6 +59,24 @@ export async function markAsRead(notificationId: string): Promise<void> {
   await sb.from('notifications').update({ read: true }).eq('id', notificationId).eq('user_id', user.id);
 }
 
+export async function deleteNotification(notificationId: string): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const sb = createSupabaseAdminClient();
+  await sb.from('notifications').delete().eq('id', notificationId).eq('user_id', user.id);
+}
+
+export async function deleteAllNotifications(): Promise<void> {
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const sb = createSupabaseAdminClient();
+  await sb.from('notifications').delete().eq('user_id', user.id);
+}
+
 export async function getAlertSettings(): Promise<{
   email: string;
   emailEnabled: boolean;

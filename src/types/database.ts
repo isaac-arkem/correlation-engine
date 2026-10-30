@@ -120,7 +120,7 @@ export type Database = {
         Row: {
           id: string;
           run_id: string;
-          source: 'suricata' | 'windows_security' | 'powershell';
+          source: 'suricata' | 'windows_security' | 'powershell' | 'windows_defender';
           event_time: string;
           event_type: string | null;
           event_id: number | null;
@@ -137,7 +137,7 @@ export type Database = {
         Insert: {
           id?: string;
           run_id: string;
-          source: 'suricata' | 'windows_security' | 'powershell';
+          source: 'suricata' | 'windows_security' | 'powershell' | 'windows_defender';
           event_time: string;
           event_type?: string | null;
           event_id?: number | null;
@@ -263,7 +263,7 @@ export type Database = {
       };
     };
     Enums: {
-      source_t: 'suricata' | 'windows_security' | 'powershell';
+      source_t: 'suricata' | 'windows_security' | 'powershell' | 'windows_defender';
       severity_t: 'low' | 'medium' | 'high' | 'critical';
       incident_status_t: 'new' | 'investigating' | 'resolved' | 'false_positive';
     };

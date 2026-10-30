@@ -26,6 +26,7 @@ import { resolve } from 'path';
 config({ path: resolve(process.cwd(), '.env.local') });
 
 import { FileSource } from './sources/fileSource';
+import { LiveDemoSource } from './sources/liveDemoSource';
 import { classifyAll } from './classify';
 import { correlate } from './correlate';
 import { createRun, completeRun, failRun, persistEvents, persistIncidents } from './persist';
@@ -136,11 +137,20 @@ async function main() {
   try {
     // Step 1: Ingest
     console.log('--- STEP 1: INGESTION ---');
-    const source = new FileSource({
-      evePath,
-      winSecurityPath: winSecPath,
-      psOperationalPath: psPath,
-    });
+    const useLiveDemo = process.argv.includes('--source') &&
+      process.argv[process.argv.indexOf('--source') + 1] === 'live-demo';
+    const source = useLiveDemo
+      ? new LiveDemoSource({
+          node: process.env.DEMO_ES_URL || 'http://localhost:9200',
+          username: process.env.DEMO_ES_USER || 'elastic',
+          password: process.env.DEMO_ES_PASS,
+          index: 'live-demo',
+        })
+      : new FileSource({
+          evePath,
+          winSecurityPath: winSecPath,
+          psOperationalPath: psPath,
+        });
 
     const startTime = Date.now();
     const events = await source.getSecurityEvents(range);

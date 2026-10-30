@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 import { cn } from "@/lib/utils/cn";
 import {
+  deleteAllNotifications,
+  deleteNotification,
   forwardNotification,
   getAlertSettings,
   getNotifications,
@@ -122,6 +124,23 @@ export function NotificationBell() {
     });
   }
 
+  function handleDelete(e: React.MouseEvent, n: Notification) {
+    e.stopPropagation();
+    startTransition(async () => {
+      await deleteNotification(n.id);
+      setNotifications((prev) => prev.filter((x) => x.id !== n.id));
+      if (!n.read) setUnread((c) => Math.max(0, c - 1));
+    });
+  }
+
+  function handleClearAll() {
+    startTransition(async () => {
+      await deleteAllNotifications();
+      setNotifications([]);
+      setUnread(0);
+    });
+  }
+
   return (
     <div ref={panelRef} className="relative">
       <button
@@ -145,15 +164,26 @@ export function NotificationBell() {
         <div className="absolute right-0 top-full z-[80] mt-1.5 w-[22rem] overflow-hidden rounded-lg border border-line bg-base shadow-2xl">
           <div className="flex items-center justify-between border-b border-line px-3 py-2">
             <span className="text-[12px] font-semibold text-highlight">Notifications</span>
-            {unread > 0 && (
-              <button
-                type="button"
-                onClick={handleMarkAll}
-                className="text-[10px] text-muted hover:text-ink"
-              >
-                Mark all read
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {unread > 0 && (
+                <button
+                  type="button"
+                  onClick={handleMarkAll}
+                  className="text-[10px] text-muted hover:text-ink"
+                >
+                  Mark all read
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleClearAll}
+                  className="text-[10px] text-muted hover:text-red-400"
+                >
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
           {emailStatus ? (
             <p
@@ -213,6 +243,17 @@ export function NotificationBell() {
                         {forwardingId === n.id ? "Sending…" : "Forward to engineer"}
                       </button>
                     </div>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDelete(e, n)}
+                      aria-label="Delete notification"
+                      title="Delete"
+                      className="mt-0.5 h-5 w-5 shrink-0 rounded text-subtle hover:bg-hover hover:text-red-400 transition-colors"
+                    >
+                      <svg viewBox="0 0 24 24" width="13" height="13" className="mx-auto" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </button>
                   </div>
                 );
               })

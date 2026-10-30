@@ -7,7 +7,7 @@ import { persistEvents, persistIncidents } from '@/lib/correlation/persist';
 import { autoDetectConfig } from '@/lib/correlation/auto-detect';
 import { setCorrelationConfig, resetConfigCache } from '@/lib/correlation/config';
 import type { NormalizedEvent } from '@/lib/correlation/types';
-import { notifyLivePollEvent } from '@/lib/notifications/create';
+import { notifyLivePollEvent, notifyNewIncidents } from '@/lib/notifications/create';
 
 function mapSuricataHit(s: Record<string, unknown>): NormalizedEvent {
   const alert = s.alert as Record<string, unknown> | undefined;
@@ -68,7 +68,7 @@ export async function POST(request: Request) {
   // Look up the run and its linked connection
   const { data: run } = await supabase
     .from('correlation_runs')
-    .select('id, connection_id, poll_count, last_poll_at, status')
+    .select('id, connection_id, poll_count, last_poll_at, status, attacker_ips, victim_ips, c2_ports')
     .eq('id', runId)
     .single();
 
@@ -165,6 +165,8 @@ export async function POST(request: Request) {
                     { term: { 'event.code': 4624 } },
                     { term: { 'event.code': 4625 } },
                     { term: { 'event.code': 4798 } },
+                    { term: { 'event.code': 1116 } },
+                    { term: { 'event.code': 1117 } },
                   ],
                   minimum_should_match: 1,
                 },
@@ -219,16 +221,83 @@ export async function POST(request: Request) {
 
     // Classify and correlate
     resetConfigCache();
-    const detectedConfig = autoDetectConfig(newEvents);
+    // Use the hosts recorded on the run when present; fall back to auto-detect.
+    const declA = (run.attacker_ips ?? []) as string[];
+    const declV = (run.victim_ips ?? []) as string[];
+    const declC = (run.c2_ports ?? []) as number[];
+    const detectedConfig =
+      declA.length > 0 && declV.length > 0
+        ? { attackerIps: declA, victimIps: declV, c2Ports: new Set(declC) }
+        : autoDetectConfig(newEvents);
     setCorrelationConfig(detectedConfig);
     classifyAll(newEvents);
 
     const classified = newEvents.filter((e) => e.killChainPhase);
-    const incidents = correlate(newEvents);
 
-    // Persist
-    const eventIdMap = await persistEvents(classified, runId);
+    // Persist this cycle's new events (incremental ingest).
+    await persistEvents(classified, runId);
+
+    // CUMULATIVE CORRELATION: re-correlate ALL events accumulated for this run,
+    // not just this batch. A single campaign that streams in across several
+    // poll cycles would otherwise fragment into several partial incidents
+    // (one per batch). Reconstruct the full phased set from the DB and
+    // correlate it as a whole so it converges to the real incident(s).
+    const { data: storedEvents } = await admin
+      .from('events')
+      .select(
+        'id, source, event_time, event_type, src_ip, dest_ip, src_port, dest_port, kill_chain_phase'
+      )
+      .eq('run_id', runId)
+      .limit(10000);
+
+    const fullEvents: NormalizedEvent[] = [];
+    const eventIdMap = new Map<NormalizedEvent, string>();
+    for (const row of storedEvents ?? []) {
+      const ev: NormalizedEvent = {
+        source: row.source as NormalizedEvent['source'],
+        eventTime: row.event_time as string,
+        eventType: (row.event_type ?? undefined) as string | undefined,
+        srcIp: (row.src_ip ?? undefined) as string | undefined,
+        destIp: (row.dest_ip ?? undefined) as string | undefined,
+        srcPort: (row.src_port ?? undefined) as number | undefined,
+        destPort: (row.dest_port ?? undefined) as number | undefined,
+        killChainPhase: (row.kill_chain_phase ?? undefined) as string | undefined,
+      };
+      fullEvents.push(ev);
+      eventIdMap.set(ev, row.id as string);
+    }
+
+    const incidents = correlate(fullEvents);
+
+    // How many critical/high incidents this run had BEFORE this cycle's rebuild,
+    // so we only notify when a new high-severity incident first appears (not every poll).
+    const { count: prevCritical } = await admin
+      .from('incidents')
+      .select('id', { count: 'exact', head: true })
+      .eq('run_id', runId)
+      .in('severity', ['critical', 'high']);
+
+    // Replace this run's incidents with the freshly correlated set.
+    // incident_events cascades on incident delete, so no orphan junction rows.
+    await admin.from('incidents').delete().eq('run_id', runId);
     await persistIncidents(incidents, eventIdMap, runId);
+
+    // Notify when a critical/high incident first surfaces during the live session.
+    const criticalNow = incidents.filter(
+      (i) => i.severity === 'critical' || i.severity === 'high'
+    );
+    if (criticalNow.length > (prevCritical ?? 0)) {
+      await notifyNewIncidents(
+        user.id,
+        conn.label,
+        criticalNow.map((i) => ({
+          severity: i.severity,
+          attackerIp: i.attackerIp,
+          victimIp: i.victimIp,
+        })),
+        runId
+      );
+    }
 
     const { count: eventCount } = await admin
       .from('events')

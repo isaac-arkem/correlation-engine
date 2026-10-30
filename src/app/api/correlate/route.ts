@@ -103,7 +103,10 @@ export async function POST(request: Request) {
           tempFiles.push(tempPath);
 
           const events = await parser(tempPath);
-          allEvents.push(...events);
+          // Append in a loop: push(...events) spreads every event as a call
+          // argument and overflows the stack on large files (hundreds of
+          // thousands of events). A loop is behaviour-identical and safe.
+          for (const event of events) allEvents.push(event);
 
           send({
             step: 'parsed',

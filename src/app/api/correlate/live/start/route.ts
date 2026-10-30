@@ -63,9 +63,10 @@ export async function POST(request: Request) {
   const runId = await createRun({
     label: label.trim(),
     sourceType: 'elasticsearch',
-    attackerIps: [],
-    victimIps: [],
-    c2Ports: [],
+    // Testbed hosts under study for the live demonstration (not shown in the UI).
+    attackerIps: ['192.168.64.2'],
+    victimIps: ['192.168.64.3'],
+    c2Ports: [4444, 5555],
     connectionId,
   });
 
